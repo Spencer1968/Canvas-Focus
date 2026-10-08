@@ -1,0 +1,23 @@
+[
+  {
+    "id": 101,
+    "name": "CSE 111: Python Pytest Suite",
+    "due_at": "2026-10-10T23:59:00Z",
+    "points_possible": 50,
+    "description": "Write unit tests for the utility module using pytest."
+  },
+  {
+    "id": 102,
+    "name": "WDD 130: Portfolio DOM Manipulation",
+    "due_at": "2026-10-06T23:59:00Z",
+    "points_possible": 100,
+    "description": "Implement interactive JavaScript elements and dynamic CSS styling."
+  },
+  {
+    "id": 103,
+    "name": "MATH 108: Weekly Quiz",
+    "due_at": "2026-10-05T18:00:00Z",
+    "points_possible": 20,
+    "description": "Complete problem set 4 covering linear equations."
+  }
+]

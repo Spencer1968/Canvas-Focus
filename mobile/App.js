@@ -6,17 +6,27 @@ import {
     ScrollView,
     StyleSheet,
     Text,
+    TextInput,
     TouchableOpacity,
     View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { fetchAssignments } from './src/services/api';
+
+const ICS_STORAGE_KEY = '@canvas_ics_url';
 
 export default function App() {
     const [assignments, setAssignments] = useState([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
     const [userOffsets, setUserOffsets] = useState({});
+
+    // Calendar Feed State
+    const [icsUrl, setIcsUrl] = useState('');
+    const [inputUrl, setInputUrl] = useState('');
+    const [isConfigured, setIsConfigured] = useState(false);
+    const [showSetupModal, setShowSetupModal] = useState(false);
 
     // Toggle this in UI to switch between Free and Pro preview modes
     const [isPremium, setIsPremium] = useState(false);
@@ -83,6 +93,17 @@ export default function App() {
 
         const loadData = async () => {
             try {
+                // 1. Read saved .ics URL from AsyncStorage
+                const savedUrl = await AsyncStorage.getItem(ICS_STORAGE_KEY);
+                if (savedUrl) {
+                    setIcsUrl(savedUrl);
+                    setInputUrl(savedUrl);
+                    setIsConfigured(true);
+                } else {
+                    setLoading(false);
+                    return;
+                }
+                
                 const data = await fetchAssignments(controller.signal);
 
                 // Sort assignments by priority_score descending (highest to lowest)

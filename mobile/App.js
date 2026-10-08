@@ -35,31 +35,54 @@ export default function App() {
     const [selectedAssignment, setSelectedAssignment] = useState(null);
     const [subTasks, setSubTasks] = useState({});
 
-    // Handler to adjust priority offset
-    const adjustPriority = (assignmentId, amount) => {
-        setUserOffsets((prev) => {
-            const currentOffset = prev[assignmentId] || 0;
-            return {
-                ...prev,
-                [assignmentId]: currentOffset + amount,
-            };
-        });
+    // Clean HTML tags from Canvas API strings
+    const cleanDescription = (html) => {
+        if (!html) return '';
+        return html
+            .replace(/<[^>]*>?/gm, '')
+            .replace(/&nbsp;/g, ' ')
+            .trim();
     };
 
-    // Calculate final score including user offset
-    const getAdjustedScore = (item) => {
-        const baseScore = item.priority_score || 0;
-        const offset = userOffsets[item.id] || 0;
-        return Math.max(0, baseScore + offset);
-    };
+    // Dynamic daily action steps customized to the specific assignment
+    const generateActionPlan = (assignment) => {
+        if (!assignment) return [];
 
-    // Generates dynamic daily action steps based on remaining days until due date
-    const generateActionPlan = (dueAtString) => {
-        if (!dueAtString) {
-            return [
-                { id: 1, title: 'Day 1: Review assignment prompt & rubric', completed: false },
-                { id: 2, title: 'Day 2: Complete submission and verify upload', completed: false },
+        const title = assignment.name || 'Assignment';
+        const desc = cleanDescription(assignment.description || '').toLowerCase();
+        const dueAtString = assignment.due_at;
+
+        let steps = [];
+
+        if (title.match(/quiz|exam|test|knowledge check/i)) {
+            steps = [
+                `Review lecture notes & slides for ${title}`,
+                `Complete practice problems & review quiz study guide`,
+                `Take ${title} before deadline`,
             ];
+        } else if (title.match(/pytest|python|c#|java|html|css|js|dom|code|program|repository|git/i) || desc.includes('code') || desc.includes('test')) {
+            steps = [
+                `Read instructions & setup project files for ${title}`,
+                `Implement core functionality and logic`,
+                `Run unit tests / test edge cases & debug`,
+                `Submit code and verify submission link`,
+            ];
+        } else if (title.match(/essay|paper|discussion|reflection|report|reading/i) || desc.includes('write')) {
+            steps = [
+                `Read required materials & outline main points for ${title}`,
+                `Draft response / main body paragraphs`,
+                `Proofread, format citations, and submit`,
+            ];
+        } else {
+            steps = [
+                `Review instructions and rubric for ${title}`,
+                `Work on core deliverables for ${title}`,
+                `Final review and submission`,
+            ];
+        }
+
+        if (!dueAtString) {
+            return steps.map((step, idx) => ({ id: idx + 1, title: step, completed: false }));
         }
 
         const due = new Date(dueAtString);
@@ -68,25 +91,24 @@ export default function App() {
         const daysLeft = Math.max(1, Math.ceil(diffTime / (1000 * 60 * 60 * 24)));
 
         if (daysLeft <= 1) {
-            return [
-                { id: 1, title: 'Urgent: Read requirements & draft core solution', completed: false },
-                { id: 2, title: 'Urgent: Run final tests & submit before deadline', completed: false },
-            ];
-        } else if (daysLeft <= 3) {
-            return [
-                { id: 1, title: 'Day 1: Break down requirements & gather resources', completed: false },
-                { id: 2, title: 'Day 2: Build main logic / complete draft', completed: false },
-                { id: 3, title: 'Day 3: Review, test, and submit', completed: false },
-            ];
-        } else {
-            return [
-                { id: 1, title: 'Day 1-2: Read prompt, review rubric & plan structure', completed: false },
-                { id: 2, title: 'Day 3-4: Work on implementation / main body', completed: false },
-                { id: 3, title: 'Day 5+: Self-review, refactor, and submit early', completed: false },
-            ];
+            return steps.slice(0, 2).map((step, idx) => ({
+                id: idx + 1,
+                title: `Urgent: ${step}`,
+                completed: false,
+            }));
         }
+
+        return steps.map((step, idx) => {
+            const dayNum = Math.min(idx + 1, daysLeft);
+            return {
+                id: idx + 1,
+                title: `Day ${dayNum}: ${step}`,
+                completed: false,
+            };
+        });
     };
 
+    // Save ICS URL handler
     const saveIcsUrl = async () => {
         try {
             const trimmedUrl = inputUrl.trim();
@@ -101,7 +123,6 @@ export default function App() {
             }
             setShowSetupModal(false);
 
-            // Fetch assignments immediately with the new URL
             setLoading(true);
             const data = await fetchAssignments(null, trimmedUrl);
             const sortedAssignments = [...data].sort(
@@ -109,10 +130,9 @@ export default function App() {
             );
             setAssignments(sortedAssignments);
 
-            // Pre-fill action plans
             const initialTasks = {};
             sortedAssignments.forEach((item) => {
-                initialTasks[item.id] = generateActionPlan(item.due_at);
+                initialTasks[item.id] = generateActionPlan(item);
             });
             setSubTasks(initialTasks);
             setError(null);
@@ -124,33 +144,34 @@ export default function App() {
         }
     };
 
+    // Combined initialization useEffect
     useEffect(() => {
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 5000); // 5 second timeout limit
+        const timeoutId = setTimeout(() => controller.abort(), 8000);
 
         const checkStorageAndLoad = async () => {
             try {
-                // 1. Read saved .ics URL from AsyncStorage
                 const savedUrl = await AsyncStorage.getItem(ICS_STORAGE_KEY);
+
                 if (!savedUrl) {
                     setIsConfigured(false);
                     setLoading(false);
-                    return
+                    return;
                 }
 
+                setIcsUrl(savedUrl);
+                setInputUrl(savedUrl);
                 setIsConfigured(true);
-                const data = await fetchAssignments(controller.signal, savedUrl);
 
-                // Sort assignments by priority_score descending (highest to lowest)
+                const data = await fetchAssignments(controller.signal, savedUrl);
                 const sortedAssignments = [...data].sort(
                     (a, b) => (b.priority_score || 0) - (a.priority_score || 0)
                 );
                 setAssignments(sortedAssignments);
 
-                // Pre-fill mock daily sub-tasks for testing
                 const initialTasks = {};
                 sortedAssignments.forEach((item) => {
-                    initialTasks[item.id] = generateActionPlan(item.due_at);
+                    initialTasks[item.id] = generateActionPlan(item);
                 });
                 setSubTasks(initialTasks);
                 setError(null);
@@ -171,7 +192,22 @@ export default function App() {
         };
     }, []);
 
-    // Format date strings
+    const adjustPriority = (assignmentId, amount) => {
+        setUserOffsets((prev) => {
+            const currentOffset = prev[assignmentId] || 0;
+            return {
+                ...prev,
+                [assignmentId]: currentOffset + amount,
+            };
+        });
+    };
+
+    const getAdjustedScore = (item) => {
+        const baseScore = item.priority_score || 0;
+        const offset = userOffsets[item.id] || 0;
+        return Math.max(0, baseScore + offset);
+    };
+
     const formatDate = (dateString) => {
         if (!dateString) return 'No due date';
         const date = new Date(dateString);
@@ -182,34 +218,15 @@ export default function App() {
         });
     };
 
-    // Strip raw HTML tags sent from Canvas API
-    const cleanDescription = (html) => {
-        if (!html) return '';
-        return html
-            .replace(/<[^>]*>?/gm, '')
-            .replace(/&nbsp;/g, ' ')
-            .trim();
-    };
-
     const getPriorityStyle = (score) => {
         if (score >= 100) {
-            return {
-                badge: { backgroundColor: '#fee2e2' },
-                text: { color: '#dc2626' },
-            };
+            return { badge: { backgroundColor: '#fee2e2' }, text: { color: '#dc2626' } };
         } else if (score >= 70) {
-            return {
-                badge: { backgroundColor: '#ffedd5' },
-                text: { color: '#ea580c' },
-            };
+            return { badge: { backgroundColor: '#ffedd5' }, text: { color: '#ea580c' } };
         }
-        return {
-            badge: { backgroundColor: '#eef2ff' },
-            text: { color: '#4f46e5' },
-        };
+        return { badge: { backgroundColor: '#eef2ff' }, text: { color: '#4f46e5' } };
     };
 
-    // Toggle sub-task completed status
     const toggleSubTask = (assignmentId, taskId) => {
         setSubTasks((prev) => ({
             ...prev,
@@ -223,7 +240,34 @@ export default function App() {
         return (
             <SafeAreaView style={styles.container}>
                 <ActivityIndicator size="large" color="#0000ff" />
-                <Text style={styles.subtext}>Connecting to backend...</Text>
+                <Text style={styles.subtext}>Loading assignments...</Text>
+            </SafeAreaView>
+        );
+    }
+
+    if (!isConfigured) {
+        return (
+            <SafeAreaView style={styles.container}>
+                <View style={styles.setupContainer}>
+                    <Text style={styles.header}>Welcome to Canvas Focus</Text>
+                    <Text style={styles.setupSubtext}>
+                        Paste your Canvas Calendar Feed URL (.ics) below to connect your assignments:
+                    </Text>
+
+                    <TextInput
+                        style={styles.input}
+                        placeholder="https://canvas.instructure.com/feeds/calendars/..."
+                        placeholderTextColor="#94a3b8"
+                        value={inputUrl}
+                        onChangeText={setInputUrl}
+                        autoCapitalize="none"
+                        autoCorrect={false}
+                    />
+
+                    <TouchableOpacity style={styles.primaryButton} onPress={saveIcsUrl}>
+                        <Text style={styles.primaryButtonText}>Save & Connect Feed</Text>
+                    </TouchableOpacity>
+                </View>
             </SafeAreaView>
         );
     }
@@ -233,13 +277,19 @@ export default function App() {
             <SafeAreaView style={styles.container}>
                 <Text style={styles.errorText}>Connection Error:</Text>
                 <Text style={styles.subtext}>{error}</Text>
+                <TouchableOpacity
+                    style={[styles.primaryButton, { marginTop: 20 }]}
+                    onPress={saveIcsUrl}
+                >
+                    <Text style={styles.primaryButtonText}>Retry</Text>
+                </TouchableOpacity>
             </SafeAreaView>
         );
     }
 
     return (
         <SafeAreaView style={styles.container}>
-            {/* Header with Quick Tier Mode Toggle */}
+            {/* Header */}
             <View style={styles.headerContainer}>
                 <Text style={styles.header}>Canvas Focus</Text>
 
@@ -262,7 +312,7 @@ export default function App() {
                 </View>
             </View>
 
-            {/* Main Assignment List */}
+            {/* Assignment List */}
             <FlatList
                 data={[...assignments].sort((a, b) => {
                     if (!a.due_at) return 1;
@@ -320,7 +370,7 @@ export default function App() {
                         <View style={styles.modalScrollView}>
                             <Text style={styles.modalTitle}>Canvas Feed Settings</Text>
                             <Text style={styles.modalSubtext}>
-                                Paste or update your Canvas .ics calendar feed URL below:
+                                Update your Canvas .ics calendar feed URL below:
                             </Text>
 
                             <TextInput
@@ -358,21 +408,21 @@ export default function App() {
                 >
                     <View style={styles.modalOverlay}>
                         <View style={styles.modalContent}>
-                            <ScrollView
+                            <ScrollView 
                                 style={styles.modalScrollView}
                                 contentContainerStyle={styles.modalScrollContent}
                                 showsVerticalScrollIndicator={true}
                             >
                                 <Text style={styles.modalTitle}>{selectedAssignment.name}</Text>
                                 <Text style={styles.modalSubtext}>
-                                    Due: {formatDate(selectedAssignment.due_at)}
-                                    {selectedAssignment.points_possible !== null && selectedAssignment.points_possible !== undefined
-                                        ? ` | Points: ${selectedAssignment.points_possible}`
-                                        : ''}
+                                    Due: {formatDate(selectedAssignment.due_at)} 
+                                    {selectedAssignment.points_possible !== null && selectedAssignment.points_possible !== undefined 
+                                        ? ` | Points: ${selectedAssignment.points_possible}` 
+                                        : ''} 
                                     {` | Priority: 🔥 ${Math.round(getAdjustedScore(selectedAssignment))}`}
                                 </Text>
 
-                                {/* Priority Tuning Controls */}
+                                {/* Priority Tuning */}
                                 <View style={styles.tuningContainer}>
                                     <Text style={styles.sectionHeader}>Adjust Priority Score</Text>
                                     <View style={styles.tuningButtonsRow}>
@@ -394,7 +444,7 @@ export default function App() {
                                     </View>
                                 </View>
 
-                                {/* Assignment Description */}
+                                {/* Overview */}
                                 {selectedAssignment.description ? (
                                     <View style={styles.descriptionBox}>
                                         <Text style={styles.descriptionHeader}>Assignment Overview</Text>
@@ -404,11 +454,10 @@ export default function App() {
                                     </View>
                                 ) : null}
 
-                                {/* Action Plan Section */}
+                                {/* Action Plan */}
                                 <Text style={styles.sectionHeader}>Daily Action Plan</Text>
 
                                 {isPremium ? (
-                                    /* Pro Tier Checklist */
                                     <View style={styles.checklistContainer}>
                                         {(subTasks[selectedAssignment.id] || generateActionPlan(selectedAssignment)).map((task) => (
                                             <TouchableOpacity
@@ -436,7 +485,6 @@ export default function App() {
                                         ))}
                                     </View>
                                 ) : (
-                                    /* Free Tier Upsell Banner */
                                     <View style={styles.upsellCard}>
                                         <Text style={styles.upsellTitle}>🔒 Daily Action Plan Locked</Text>
                                         <Text style={styles.upsellDescription}>
@@ -479,15 +527,15 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         marginBottom: 16,
     },
-    header: {
-        fontSize: 24,
-        fontWeight: 'bold',
-        color: '#1a1a1a',
-    },
     headerActions: {
         flexDirection: 'row',
         alignItems: 'center',
         gap: 8,
+    },
+    header: {
+        fontSize: 22,
+        fontWeight: 'bold',
+        color: '#1a1a1a',
     },
     settingsButton: {
         backgroundColor: '#e2e8f0',
@@ -498,29 +546,6 @@ const styles = StyleSheet.create({
     settingsButtonText: {
         color: '#475569',
         fontSize: 10,
-        fontWeight: 'bold',
-    },
-    input: {
-        backgroundColor: '#ffffff',
-        borderWidth: 1,
-        borderColor: '#cbd5e1',
-        borderRadius: 10,
-        paddingHorizontal: 14,
-        paddingVertical: 12,
-        fontSize: 14,
-        color: '#1e293b',
-        marginBottom: 16,
-    },
-    primaryButton: {
-        backgroundColor: '#4f46e5',
-        paddingVertical: 14,
-        borderRadius: 10,
-        alignItems: 'center',
-        marginBottom: 12,
-    },
-    primaryButtonText: {
-        color: '#ffffff',
-        fontSize: 14,
         fontWeight: 'bold',
     },
     tierBadge: {
@@ -550,8 +575,41 @@ const styles = StyleSheet.create({
         fontSize: 18,
         textAlign: 'center',
     },
-
-    // Main Card Styles
+    setupContainer: {
+        flex: 1,
+        justifyContent: 'center',
+        paddingHorizontal: 16,
+    },
+    setupSubtext: {
+        fontSize: 14,
+        color: '#64748b',
+        marginTop: 8,
+        marginBottom: 20,
+        lineHeight: 20,
+    },
+    input: {
+        backgroundColor: '#ffffff',
+        borderWidth: 1,
+        borderColor: '#cbd5e1',
+        borderRadius: 10,
+        paddingHorizontal: 14,
+        paddingVertical: 12,
+        fontSize: 14,
+        color: '#1e293b',
+        marginBottom: 16,
+    },
+    primaryButton: {
+        backgroundColor: '#4f46e5',
+        paddingVertical: 14,
+        borderRadius: 10,
+        alignItems: 'center',
+        marginBottom: 12,
+    },
+    primaryButtonText: {
+        color: '#ffffff',
+        fontSize: 14,
+        fontWeight: 'bold',
+    },
     card: {
         backgroundColor: '#ffffff',
         padding: 16,
@@ -610,8 +668,6 @@ const styles = StyleSheet.create({
         color: '#7f8c8d',
         fontWeight: '500',
     },
-
-    // Modal Styles
     modalOverlay: {
         flex: 1,
         backgroundColor: 'rgba(0, 0, 0, 0.5)',
@@ -665,8 +721,6 @@ const styles = StyleSheet.create({
         color: '#1a1a1a',
         marginBottom: 10,
     },
-
-    // Checklist Styles
     checklistContainer: {
         marginBottom: 20,
     },
@@ -703,8 +757,6 @@ const styles = StyleSheet.create({
         textDecorationLine: 'line-through',
         color: '#94a3b8',
     },
-
-    // Free Tier Upsell Banner
     upsellCard: {
         backgroundColor: '#f8fafc',
         borderRadius: 12,
@@ -737,12 +789,12 @@ const styles = StyleSheet.create({
         fontWeight: 'bold',
         fontSize: 12,
     },
-
     closeButton: {
         backgroundColor: '#f1f5f9',
         padding: 12,
         borderRadius: 10,
         alignItems: 'center',
+        marginTop: 10,
     },
     closeButtonText: {
         color: '#475569',

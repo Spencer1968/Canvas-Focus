@@ -87,6 +87,43 @@ export default function App() {
         }
     };
 
+    const saveIcsUrl = async () => {
+        try {
+            const trimmedUrl = inputUrl.trim();
+            if (trimmedUrl) {
+                await AsyncStorage.setItem(ICS_STORAGE_KEY, trimmedUrl);
+                setIcsUrl(trimmedUrl);
+                setIsConfigured(true);
+            } else {
+                await AsyncStorage.removeItem(ICS_STORAGE_KEY);
+                setIcsUrl('');
+                setIsConfigured(false);
+            }
+            setShowSetupModal(false);
+
+            // Fetch assignments immediately with the new URL
+            setLoading(true);
+            const data = await fetchAssignments(null, trimmedUrl);
+            const sortedAssignments = [...data].sort(
+                (a, b) => (b.priority_score || 0) - (a.priority_score || 0)
+            );
+            setAssignments(sortedAssignments);
+
+            // Pre-fill action plans
+            const initialTasks = {};
+            sortedAssignments.forEach((item) => {
+                initialTasks[item.id] = generateActionPlan(item.due_at);
+            });
+            setSubTasks(initialTasks);
+            setError(null);
+        } catch (err) {
+            console.error('Failed to save ICS URL:', err);
+            setError('Failed to load feed with provided URL.');
+        } finally {
+            setLoading(false);
+        }
+    };
+
     useEffect(() => {
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 5000); // 5 second timeout limit
@@ -205,14 +242,24 @@ export default function App() {
             {/* Header with Quick Tier Mode Toggle */}
             <View style={styles.headerContainer}>
                 <Text style={styles.header}>Canvas Focus</Text>
-                <TouchableOpacity
-                    style={[styles.tierBadge, isPremium ? styles.tierPro : styles.tierFree]}
-                    onPress={() => setIsPremium(!isPremium)}
-                >
-                    <Text style={styles.tierText}>
-                        {isPremium ? 'PRO MODE' : 'FREE MODE'}
-                    </Text>
-                </TouchableOpacity>
+
+                <View style={styles.headerActions}>
+                    <TouchableOpacity
+                        style={styles.settingsButton}
+                        onPress={() => setShowSetupModal(true)}
+                    >
+                        <Text style={styles.settingsButtonText}>ICS Settings</Text>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                        style={[styles.tierBadge, isPremium ? styles.tierPro : styles.tierFree]}
+                        onPress={() => setIsPremium(!isPremium)}
+                    >
+                        <Text style={styles.tierText}>
+                            {isPremium ? 'PRO MODE' : 'FREE MODE'}
+                        </Text>
+                    </TouchableOpacity>
+                </View>
             </View>
 
             {/* Main Assignment List */}
@@ -261,6 +308,46 @@ export default function App() {
                 }
             />
 
+            {/* ICS Feed Settings Modal */}
+            <Modal
+                animationType="slide"
+                transparent={true}
+                visible={showSetupModal}
+                onRequestClose={() => setShowSetupModal(false)}
+            >
+                <View style={styles.modalOverlay}>
+                    <View style={styles.modalContent}>
+                        <View style={styles.modalScrollView}>
+                            <Text style={styles.modalTitle}>Canvas Feed Settings</Text>
+                            <Text style={styles.modalSubtext}>
+                                Paste or update your Canvas .ics calendar feed URL below:
+                            </Text>
+
+                            <TextInput
+                                style={styles.input}
+                                placeholder="https://canvas.instructure.com/feeds/..."
+                                placeholderTextColor="#94a3b8"
+                                value={inputUrl}
+                                onChangeText={setInputUrl}
+                                autoCapitalize="none"
+                                autoCorrect={false}
+                            />
+
+                            <TouchableOpacity style={styles.primaryButton} onPress={saveIcsUrl}>
+                                <Text style={styles.primaryButtonText}>Save & Reload</Text>
+                            </TouchableOpacity>
+
+                            <TouchableOpacity
+                                style={styles.closeButton}
+                                onPress={() => setShowSetupModal(false)}
+                            >
+                                <Text style={styles.closeButtonText}>Cancel</Text>
+                            </TouchableOpacity>
+                        </View>
+                    </View>
+                </View>
+            </Modal>
+
             {/* Popup Modal Detail View */}
             {selectedAssignment && (
                 <Modal
@@ -271,17 +358,17 @@ export default function App() {
                 >
                     <View style={styles.modalOverlay}>
                         <View style={styles.modalContent}>
-                            <ScrollView 
+                            <ScrollView
                                 style={styles.modalScrollView}
                                 contentContainerStyle={styles.modalScrollContent}
                                 showsVerticalScrollIndicator={true}
                             >
                                 <Text style={styles.modalTitle}>{selectedAssignment.name}</Text>
                                 <Text style={styles.modalSubtext}>
-                                    Due: {formatDate(selectedAssignment.due_at)} 
-                                    {selectedAssignment.points_possible !== null && selectedAssignment.points_possible !== undefined 
-                                        ? ` | Points: ${selectedAssignment.points_possible}` 
-                                        : ''} 
+                                    Due: {formatDate(selectedAssignment.due_at)}
+                                    {selectedAssignment.points_possible !== null && selectedAssignment.points_possible !== undefined
+                                        ? ` | Points: ${selectedAssignment.points_possible}`
+                                        : ''}
                                     {` | Priority: 🔥 ${Math.round(getAdjustedScore(selectedAssignment))}`}
                                 </Text>
 
@@ -396,6 +483,45 @@ const styles = StyleSheet.create({
         fontSize: 24,
         fontWeight: 'bold',
         color: '#1a1a1a',
+    },
+    headerActions: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 8,
+    },
+    settingsButton: {
+        backgroundColor: '#e2e8f0',
+        paddingHorizontal: 10,
+        paddingVertical: 6,
+        borderRadius: 12,
+    },
+    settingsButtonText: {
+        color: '#475569',
+        fontSize: 10,
+        fontWeight: 'bold',
+    },
+    input: {
+        backgroundColor: '#ffffff',
+        borderWidth: 1,
+        borderColor: '#cbd5e1',
+        borderRadius: 10,
+        paddingHorizontal: 14,
+        paddingVertical: 12,
+        fontSize: 14,
+        color: '#1e293b',
+        marginBottom: 16,
+    },
+    primaryButton: {
+        backgroundColor: '#4f46e5',
+        paddingVertical: 14,
+        borderRadius: 10,
+        alignItems: 'center',
+        marginBottom: 12,
+    },
+    primaryButtonText: {
+        color: '#ffffff',
+        fontSize: 14,
+        fontWeight: 'bold',
     },
     tierBadge: {
         paddingHorizontal: 10,

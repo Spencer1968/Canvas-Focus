@@ -91,20 +91,18 @@ export default function App() {
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 5000); // 5 second timeout limit
 
-        const loadData = async () => {
+        const checkStorageAndLoad = async () => {
             try {
                 // 1. Read saved .ics URL from AsyncStorage
                 const savedUrl = await AsyncStorage.getItem(ICS_STORAGE_KEY);
-                if (savedUrl) {
-                    setIcsUrl(savedUrl);
-                    setInputUrl(savedUrl);
-                    setIsConfigured(true);
-                } else {
+                if (!savedUrl) {
+                    setIsConfigured(false);
                     setLoading(false);
-                    return;
+                    return
                 }
-                
-                const data = await fetchAssignments(controller.signal);
+
+                setIsConfigured(true);
+                const data = await fetchAssignments(controller.signal, savedUrl);
 
                 // Sort assignments by priority_score descending (highest to lowest)
                 const sortedAssignments = [...data].sort(
@@ -128,7 +126,8 @@ export default function App() {
             }
         };
 
-        loadData();
+        checkStorageAndLoad();
+
         return () => {
             controller.abort();
             clearTimeout(timeoutId);

@@ -124,7 +124,8 @@ export default function App() {
             setShowSetupModal(false);
 
             setLoading(true);
-            const data = await fetchAssignments(null, trimmedUrl);
+            const controller = new AbortController();
+            const data = await fetchAssignments(controller.signal, trimmedUrl);
             const sortedAssignments = [...data].sort(
                 (a, b) => (b.priority_score || 0) - (a.priority_score || 0)
             );

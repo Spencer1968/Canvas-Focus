@@ -21,9 +21,12 @@ def extract_points_from_text(description, title):
     # Return None if no points are specified in the feed text
     return None
 
-def get_assignments():
+def get_assignments(user_ics_url=None):
+    # Use user's provided URL first, otherwise fallback to server env variable
+    target_url = user_ics_url or CANVAS_ICS_URL
+
     # Fall back to mock data if no feed URL is provided yet
-    if CANVAS_ICS_URL == "YOUR_CANVAS_ICAL_URL_HERE":
+    if not target_url or target_url == "YOUR_CANVAS_ICAL_URL_HERE":
         base_dir = os.path.dirname(__file__)
         file_path = os.path.join(base_dir, "mock_data.json")
         with open(file_path, "r") as file:
@@ -31,7 +34,7 @@ def get_assignments():
             return json.load(file)
 
     try:
-        response = requests.get(CANVAS_ICS_URL)
+        response = requests.get(target_url)
         if response.status_code != 200:
             print(f"Failed to fetch calendar feed: {response.status_code}")
             return []
